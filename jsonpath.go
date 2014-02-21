@@ -23,9 +23,9 @@ import (
     "strconv"
 )
 
-func resolvePath(j *simplejson.Json, path string) string {
+func resolvePathObj(j *simplejson.Json, path string) *simplejson.Json {
     if j == nil {
-        return ""
+        return nil
     }
 
     if idx := strings.Index(path, "["); idx > 0 {
@@ -36,19 +36,43 @@ func resolvePath(j *simplejson.Json, path string) string {
         idx2 = strings.Index(path, "]")
 
         if objidx, err = strconv.Atoi(path[idx+1:strings.Index(path, "]")]); err != nil {
-            return ""
+            return nil
         }
 
         oldpath := path[0:idx]
         newpath := path[idx2+2:]
 
-        return resolvePath(j.GetPath(oldpath).GetIndex(objidx), newpath)
+        return resolvePathObj(j.GetPath(oldpath).GetIndex(objidx), newpath)
     } else {
         if resolved := j.GetPath(path); resolved != nil {
-            if val, err := resolved.String(); err == nil {
-                return val
+            return resolved
+        }
+    }
+
+    return nil
+}
+
+func resolvePath(j *simplejson.Json, path string) string {
+    var newpath string
+
+    if strings.HasPrefix(path, "len:") {
+        newpath = path[4:]
+    } else {
+        newpath = path
+    }
+
+    if obj := resolvePathObj(j, newpath); obj != nil {
+        if strings.HasPrefix(path, "len:") {
+            if arr, err := obj.Array(); err == nil {
+                return strconv.Itoa(len(arr))
             } else {
-                fmt.Fprintf(os.Stderr, "Got an error: %s\n", err.Error())
+                fmt.Fprintf(os.Stderr, "[%s] ERROR: %s\n", newpath, err.Error())
+            }
+        } else {
+            if s, err := obj.String(); err == nil {
+                return s
+            } else {
+                fmt.Fprintf(os.Stderr, "[%s] ERROR: %s\n", path, err.Error())
             }
         }
     }
@@ -68,11 +92,8 @@ func main() {
     }
 
     for i := 1; i < len(os.Args); i++ {
-        arg := os.Args[i]
-        if resolved := resolvePath(obj, arg); len(resolved) > 0 {
+        if resolved := resolvePath(obj, os.Args[i]); len(resolved) > 0 {
             fmt.Printf("%s\n", resolved)
-        } else {
-            fmt.Fprintf(os.Stderr, "[-] Could not resolve %s\n", arg)
         }
     }
 }
